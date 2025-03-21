@@ -1,0 +1,12 @@
+name: app_plot_overlap
+title: app_plot_overlap
+username: nicobast
+account: nicobast
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 14305878
+bundleId: 9981850
+url: https://nicobast.shinyapps.io/app_plot_overlap/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE

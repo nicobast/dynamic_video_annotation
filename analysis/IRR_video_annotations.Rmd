@@ -19,7 +19,7 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE) #show code in markdown
 
 ## packages
-require(openxlsx)
+#require(openxlsx)
 require(ggplot2)
 require(psych) #IRR metric
 
@@ -29,10 +29,20 @@ theme_set(theme_bw())
 ## paths
 path<-'C:/Users/nico/PowerFolders/project_dynamic/video_annotations'
 
-##required functions
-###time conversion
-fun_timeconv<-function(x){
-  as.POSIXct(x,format = "%H:%M:%OS") #consider fractional seconds = milliseconds with %OS
+# ##required functions
+# ###time conversion - this function is not required when onset/offset is provided as numeric instead of POSIXCT
+# fun_timeconv<-function(x){
+#   as.POSIXct(x,format = "%H:%M:%OS") #consider fractional seconds = milliseconds with %OS
+# }
+
+# ###time conversion - this function is required when onset/offset is provided as character of POSIXCT
+fun_timeconv2<-function(x){
+time_var<-x
+time_var<-as.numeric(substr(time_var,1,2))*3600+
+  as.numeric(substr(time_var,4,5))*60+
+  as.numeric(substr(time_var,7,8))+
+  as.numeric(substr(time_var,10,11))*0.01
+return(time_var)
 }
 
 ###task selection function
@@ -44,14 +54,14 @@ x<-x[,names(x) %in% c('Number','Onset_Time','Offset_Time',var_name)]
 # provide settings
 
 - selct the rater in code (Rosa, Merlinda, Paula)
-- select the rating category (Mutual, Avert, Refer, Follow, Share, Supporting.gesture, Supporting.behavior, Transcript)
+- select the rating category (Mutual, Avert, Refer, Follow, Share, Single.gaze, Supporting.gesture, Supporting.behavior, Transcript)
 - select the time frame of the benchmark sequence
 
 ```{r manual settings}
 
 # rating_category<-'Avert'
 # cutoff<-as.POSIXct("00:05:00",format = "%H:%M:%OS") #time frame
-rating_category<-'Share'
+rating_category<-'Single.gaze'
 
 #rater names
 rater1_name<-'Paula'
@@ -72,18 +82,34 @@ cutoff_max<-1400
 #select rater data
 # rater2<-read.xlsx(paste0(path,'/data/FRA_038_T5_ESCS_Übereinstimmung.xlsx'),sheet = 2) #MERLINDA
 # rater1<-read.xlsx(paste0(path,'/data/FRA_038_T5_ESCS_Übereinstimmung.xlsx'),sheet = 1,rows = 1:309) #ROSA
-rater2<-read.csv(paste0(path,'/data/FRA_105_T2_ESCS_Coding_MB.csv'),sep=';',dec=',') #MERLINDA
-rater1<-read.csv(paste0(path,'/data/FRA_105_T2_ESCS_Coding_PN.csv'),sep=';',dec=',') #PAULA
+# rater2<-read.csv(paste0(path,'/data/FRA_105_T2_ESCS_Coding_MB_bereinigt.csv'),sep=';',dec=',') #MERLINDA
+# rater1<-read.csv(paste0(path,'/data/FRA_105_T2_ESCS_Coding_PN_bereinigt.csv'),sep=';',dec=',') #PAULA
+rater2<-read.csv(paste0(path,'/data/FRA_038_T5_Konsens_Merlinda.csv'),sep=';',dec=',') #MERLINDA
+rater1<-read.csv(paste0(path,'/data/FRA_038_T5_Konsens_Paula.csv'),sep=';',dec=',') #PAULA
 
-#convert time data
+
+#convert time data - old process when wanting to convert to POSIXCT
 # rater1$Offset_Time<-fun_timeconv(rater1$Offset_Time)
 # rater1$Onset_Time<-fun_timeconv(rater1$Onset_Time)
 # rater2$Offset_Time<-fun_timeconv(rater2$Offset_Time)
 # rater2$Onset_Time<-fun_timeconv(rater2$Onset_Time)
-rater1$Offset_Time<-as.numeric(rater1$Offset_Time)
-rater1$Onset_Time<-as.numeric(rater1$Onset_Time)
-rater2$Offset_Time<-as.numeric(rater2$Offset_Time)
-rater2$Onset_Time<-as.numeric(rater2$Onset_Time)
+
+#convert time data - consider whether time is provided as POXIXCT character or numeric character
+if(grepl(':',rater1$Onset_Time[1])){
+  rater1$Offset_Time<-fun_timeconv2(rater1$Offset_Time)
+  rater1$Onset_Time<-fun_timeconv2(rater1$Onset_Time)
+} else {
+  rater1$Offset_Time<-as.numeric(rater1$Offset_Time)
+  rater1$Onset_Time<-as.numeric(rater1$Onset_Time)
+}
+
+if(grepl(':',rater2$Onset_Time[1])){
+  rater2$Offset_Time<-fun_timeconv2(rater2$Offset_Time)
+  rater2$Onset_Time<-fun_timeconv2(rater2$Onset_Time)
+} else {
+  rater2$Offset_Time<-as.numeric(rater2$Offset_Time)
+  rater2$Onset_Time<-as.numeric(rater2$Onset_Time)
+}
 
 #select a task based on timestamp
 rater1_task1<-rater1[rater1$Onset_Time<cutoff_max & rater1$Onset_Time>cutoff_min,]
@@ -134,8 +160,11 @@ ggplot(df) +
 
 - matrix is calculated per every 10ms. This is also the time resolution provided by INTERACT coding software
 - function creates a matrix that alligns rating time frames between raters that is used for a contingency table
+- scaling factor can be changed in code to alter temporal resolution of contingency table (e.g: 1s or 10ms)
 
-```{r IRR matrix}
+```{r IRR matrix, warning=FALSE}
+
+scaling_factor<-100 # for data in seconds format, scaling factor 100calculates the IRR based on 0.01 second precision
 
 # convert to matrix to define inter-rater reliability
 
@@ -153,7 +182,7 @@ min_time<-min(rating_df$Onset_Time)
 #   as.numeric(substr(max_time,4,5))*6000+
 #   as.numeric(substr(max_time,7,8))*100+
 #   as.numeric(substr(max_time,10,11))
-vector_rows<-(max_time-min_time)*100
+vector_rows<-(max_time-min_time)*scaling_factor
 
 #length of rater vector based on rated time
 rater_vector<-rep(NA,vector_rows)
@@ -162,8 +191,8 @@ rater_vector<-rep(NA,vector_rows)
 for(i in 1:nrow(rating_df)){
 #start_row<-round(as.numeric(difftime(rating_df$Onset_Time[i],min(rating_df$Onset_Time),units='secs'))*100)
 #end_row<-round(as.numeric(difftime(rating_df$Offset_Time[i],min(rating_df$Onset_Time),units='secs'))*100)
-start_row<-round((rating_df$Onset_Time[i]-min(rating_df$Onset_Time))*100)
-end_row<-round((rating_df$Offset_Time[i]-min(rating_df$Onset_Time))*100)
+start_row<-round((rating_df$Onset_Time[i]-min(rating_df$Onset_Time))*scaling_factor)
+end_row<-round((rating_df$Offset_Time[i]-min(rating_df$Onset_Time))*scaling_factor)
 category<-rating_df[i,rating_category]
 if(category==''){category<-'NONE'}
 
@@ -187,12 +216,12 @@ rater2_vector<-fun_rater_vector(rating_df=rater2_task1_category)
 #consider rating timing offset between raters
 rater1_start_timing<-min(rater1_task1_category$Onset_Time)
 rater2_start_timing<-min(rater2_task1_category$Onset_Time)
-start_timing_diff<-round((rater1_start_timing-rater2_start_timing)*100)
+start_timing_diff<-round((rater1_start_timing-rater2_start_timing)*scaling_factor)
 
 #create a matrix combing ratings, consider different lengths and differently rated timeframes
 earliest_start<-min(c(rater1_task1_category$Onset_Time,rater2_task1_category$Onset_Time))
 latest_end<-max(c(rater1_task1_category$Offset_Time,rater2_task1_category$Offset_Time))
-maxtrix_rows<-(latest_end-earliest_start)*100
+maxtrix_rows<-(latest_end-earliest_start)*scaling_factor
 
 if(sign(start_timing_diff)==-1){
   rating_df<-data.frame(matrix(NA, nrow=maxtrix_rows,ncol=2))
@@ -207,12 +236,24 @@ if(sign(start_timing_diff)==1){
   }
 
 #final analysis
-table(rater1_vector) #ratings rater 1
-table(rater2_vector) #ratings rater 2
-table(rating_df[,1],rating_df[,2]) #contingency table
+rater1_table<-table(rater1_vector) #ratings rater 1
+names(dimnames(rater1_table)) <-rater1_name
+rater1_table
+
+rater2_table<-table(rater2_vector) #ratings rater 1
+names(dimnames(rater2_table)) <-rater2_name
+rater2_table
+
+con_table<- table(rating_df[,1],rating_df[,2]) #create contingency table
+names(dimnames(con_table)) <- c(rater1_name, rater2_name)  #add names
+con_table #print
+
 cohen.kappa(rating_df) #IRR
 irr::kappa2(rating_df, weight = 'equal') #IRR with disagreement is weighted
-irr::kappam.fleiss(rating_df)
+#irr::kappam.fleiss(rating_df) #for multiple raters
 
+#Krippendorf Alpha
+rating_df_long<-t(as.matrix(rating_df)) #convert to long format
+irr::kripp.alpha(rating_df_long, method = "nominal")
 ```
 
