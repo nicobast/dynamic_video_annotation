@@ -1,7 +1,10 @@
 library(shiny)
 require(ggplot2)
+theme_set(theme_bw())
 
-# ###time conversion - this function is required when onset/offset is provided as character of POSIXCT
+## required custom functions ####
+
+##time conversion - this function is required when onset/offset is provided as character of POSIXCT
 fun_timeconv2 <- function(x) {
   time_var <- x
   time_var <- as.numeric(substr(time_var, 1, 2)) * 3600 +
@@ -11,7 +14,9 @@ fun_timeconv2 <- function(x) {
   return(time_var)
 }
 
+## plotting function - also applies necessary conversion steps 
 func_plot_overlaps <- function(rater1) {
+  
   ###time conversion - this function is required when onset/offset is provided as character of POSIXCT
   if (grepl(':', rater1$Onset_Time[1])) {
     rater1$Offset_Time <- fun_timeconv2(rater1$Offset_Time)
@@ -57,11 +62,14 @@ func_plot_overlaps <- function(rater1) {
   for (i in 1:length(unique_rating_minutes)) {
     gg_list[[i]] <- ggplot(rater1[rater1$minute == unique_rating_minutes[i] & rater1$overlap, ]) +
       geom_segment(aes(x = seq, xend = seq, y = Onset_Time / 60, yend = Offset_Time / 60, color = ratings, linewidth = 2)) +
-      labs(title = paste("ratings of minute", unique_rating_minutes[i]), x = "annotation number", y = "annotation duration (min)")
+      labs(title = paste("overlap of ratings in minute", unique_rating_minutes[i]), x = "annotation number", y = "annotation duration (min)")
   }
   
   return(gg_list)
 }
+
+
+## Shiny content ####
 
 # UI to select file
 ui <- fluidPage(
@@ -87,7 +95,7 @@ server <- function(input, output, session) {
     values$data <- read.csv(input$file$datapath, sep = ';', dec = ',')
   })
   
-  
+  #show selected file panel
   output$fileName <- renderText({
     if (is.null(input$file)) {
       return("No file selected")
@@ -104,6 +112,7 @@ server <- function(input, output, session) {
     do.call(tagList, plot_output_list)
   })
   
+  #plot all plots
   observe({
     req(values$data)
     plot_list <- func_plot_overlaps(values$data)
