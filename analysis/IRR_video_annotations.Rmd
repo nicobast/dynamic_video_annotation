@@ -15,15 +15,31 @@ editor_options:
   chunk_output_type: console
 ---
 
+# Video annotation - global rater agreement
+
+- takes rating exports of INTERACT as CSV
+- estimates rater agreement, IRR, performance
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE) #show code in markdown
 
+#fucntion to install packages when not on system
+required_package <- function(package) {
+  if (!require(package, character.only = TRUE)) {
+    install.packages(package, dependencies = TRUE)
+    require(package, character.only = TRUE)
+  }
+}
+
 ## packages
-#require(openxlsx)
-require(ggplot2)
-require(psych) #IRR metric
+required_package('ggplot2')
+required_package('psych')
+required_package('irr')
+required_package('MLmetrics')
+required_package('knitr')
 
 
+# figure theme
 theme_set(theme_bw())
 
 ## paths
@@ -49,9 +65,91 @@ return(time_var)
 fun_seltask<-function(x,var_name){
 x<-x[,names(x) %in% c('Number','Onset_Time','Offset_Time',var_name)]
 }
+
+##create a matrix - function takes interact ratings and creates vector in tenth of second format with according rating label
+fun_rater_vector_singlecat<-function(rating_df,scaling_factor_f){
+
+###get max time
+#max_time<-format(max_time,"%H:%M:%OS2") #backconverted to character
+max_time<-max(rating_df$Offset_Time)
+min_time<-min(rating_df$Onset_Time)
+
+
+###calculate the number of tens of seconds 
+# vector_rows<-as.numeric(substr(max_time,1,2))*360000+
+#   as.numeric(substr(max_time,4,5))*6000+
+#   as.numeric(substr(max_time,7,8))*100+
+#   as.numeric(substr(max_time,10,11))
+vector_rows<-(max_time-min_time)*scaling_factor_f
+
+#length of rater vector based on rated time
+rater_vector<-rep(NA,vector_rows)
+
+#function that fills a vector with categories based on ratings
+for(i in 1:nrow(rating_df)){
+#start_row<-round(as.numeric(difftime(rating_df$Onset_Time[i],min(rating_df$Onset_Time),units='secs'))*100)
+#end_row<-round(as.numeric(difftime(rating_df$Offset_Time[i],min(rating_df$Onset_Time),units='secs'))*100)
+start_row<-round((rating_df$Onset_Time[i]-min(rating_df$Onset_Time))*scaling_factor)
+end_row<-round((rating_df$Offset_Time[i]-min(rating_df$Onset_Time))*scaling_factor)
+category<-rating_df[i,rating_category]
+if(category==''){category<-'NONE'}
+
+#print(c(i,start_row,end_row,category)) #DEBUGGING
+
+rater_vector[start_row:end_row]<-category
+}
+
+return(rater_vector)
+  
+}
+
+##create a matrix - function takes interact ratings and creates vector in tenth of second format with according rating label
+fun_rater_vector_allcat<-function(rating_df,scaling_factor_f){
+
+  #debugging
+  rating_df<-rater1_task1
+  scaling_factor_f<-100
+   
+###get max time
+max_time<-max(rating_df$Offset_Time)
+min_time<-min(rating_df$Onset_Time)
+
+###calculate the number of tens of seconds 
+vector_rows<-(max_time-min_time)*scaling_factor_f
+
+#length of rater vector based on rated time
+rater_vector<-rep(NA,vector_rows)
+
+#rating category rows
+rating_categories<-c('Single.gaze','Avert','Refer','Follow','Share','Mutual')
+
+#function that fills a vector with categories based on ratings
+for(i in 1:nrow(rating_df)){
+#start_row<-round(as.numeric(difftime(rating_df$Onset_Time[i],min(rating_df$Onset_Time),units='secs'))*100)
+#end_row<-round(as.numeric(difftime(rating_df$Offset_Time[i],min(rating_df$Onset_Time),units='secs'))*100)
+start_row<-round((rating_df$Onset_Time[i]-min(rating_df$Onset_Time))*scaling_factor)
+end_row<-round((rating_df$Offset_Time[i]-min(rating_df$Onset_Time))*scaling_factor)
+
+select_rated_cat_column<-rating_df[i,names(rating_df) %in% rating_categories]!=''
+ifelse(any(select_rated_cat_column),
+       category<-rating_df[i,names(rating_df) %in%
+                             rating_categories][select_rated_cat_column],
+       category<-'NONE'
+)
+
+#print(c(i,start_row,end_row,category)) #DEBUGGING
+
+rater_vector[start_row:end_row]<-category
+}
+
+return(rater_vector)
+  
+}
+
+
 ```
 
-# provide settings
+## provide settings
 
 - selct the rater in code (Rosa, Merlinda, Paula)
 - select the rating category (Mutual, Avert, Refer, Follow, Share, Single.gaze, Supporting.gesture, Supporting.behavior, Transcript)
@@ -61,31 +159,39 @@ x<-x[,names(x) %in% c('Number','Onset_Time','Offset_Time',var_name)]
 
 # rating_category<-'Avert'
 # cutoff<-as.POSIXct("00:05:00",format = "%H:%M:%OS") #time frame
-rating_category<-'Single.gaze'
+rating_category<-'Share'
+eval_single_category<-FALSE
+
+#rating collapsed to same label: "share - CP" + "share - CT" = "share"
+#- has to be done for machine learning metrics that require 2x2 contingency table
+one_rating<-TRUE
+
+#scaling factor
+scaling_factor<-100 # for data in seconds format, scaling factor 100calculates the IRR based on 0.01 second precision
 
 #rater names
-rater1_name<-'Paula'
+rater1_name<-'Rosa'
 rater2_name<-'Merlinda'
 
-#rating time
-cutoff_min<-399
-cutoff_max<-1400
+#rating time - for specific category
+cutoff_min<-1
+cutoff_max<-1500
+#-->needs to cover all 
+
 
 ```
 
-# read and select data
+## read and select data
 
 - reads INTERACT output for two rater and selects a specific sequences of a task
 
 ```{r read and select data}
 
 #select rater data
-# rater2<-read.xlsx(paste0(path,'/data/FRA_038_T5_ESCS_Übereinstimmung.xlsx'),sheet = 2) #MERLINDA
-# rater1<-read.xlsx(paste0(path,'/data/FRA_038_T5_ESCS_Übereinstimmung.xlsx'),sheet = 1,rows = 1:309) #ROSA
 # rater2<-read.csv(paste0(path,'/data/FRA_105_T2_ESCS_Coding_MB_bereinigt.csv'),sep=';',dec=',') #MERLINDA
 # rater1<-read.csv(paste0(path,'/data/FRA_105_T2_ESCS_Coding_PN_bereinigt.csv'),sep=';',dec=',') #PAULA
-rater2<-read.csv(paste0(path,'/data/FRA_038_T5_Konsens_Merlinda.csv'),sep=';',dec=',') #MERLINDA
-rater1<-read.csv(paste0(path,'/data/FRA_038_T5_Konsens_Paula.csv'),sep=';',dec=',') #PAULA
+rater2<-read.csv(paste0(path,'/data/FRA_038_T5_Konsens_Paula.csv'),sep=';',dec=',') #MERLINDA
+rater1<-read.csv(paste0(path,'/data/FRA_038_T5_Konsens_Rosa.csv'),sep=';',dec=',') #PAULA
 
 
 #convert time data - old process when wanting to convert to POSIXCT
@@ -121,15 +227,112 @@ rater2_task1_category<-fun_seltask(rater2_task1,rating_category)
 
 ```
 
-# Plot annotations for a category
+## prepare rating matrix 
+
+- matrix is calculated per every 10ms. This is also the time resolution provided by INTERACT coding software
+- function creates a matrix that alligns rating time frames between raters that is used for a contingency table
+- scaling factor can be changed in code to alter temporal resolution of contingency table (e.g: 1s or 10ms)
+
+```{r create matrix across categories}
+
+#convert to vector
+rater1_vector_allcat<-fun_rater_vector_allcat(rating_df=rater1,
+                                scaling_factor_f=scaling_factor)
+rater2_vector_allcat<-fun_rater_vector_allcat(rating_df=rater2,
+                                scaling_factor_f=scaling_factor)
+
+#consider rating timing offset between raters
+rater1_start_timing<-min(rater1_task1$Onset_Time)
+rater2_start_timing<-min(rater2_task1$Onset_Time)
+start_timing_diff<-round((rater1_start_timing-rater2_start_timing)*scaling_factor)
+
+#create a matrix combing ratings, consider different lengths and differently rated timeframes
+earliest_start<-min(c(rater1_task1$Onset_Time,rater2_task1$Onset_Time))
+latest_end<-max(c(rater1_task1$Offset_Time,rater2_task1$Offset_Time))
+maxtrix_rows<-(latest_end-earliest_start)*scaling_factor
+
+if(sign(start_timing_diff)==-1){
+  rating_df_all<-data.frame(matrix(NA, nrow=maxtrix_rows,ncol=2))
+  rating_df_all$X1[1:length(rater1_vector_allcat)]<-rater1_vector_allcat
+  rating_df_all$X2[(abs(start_timing_diff)):(abs(start_timing_diff)+length(rater2_vector_allcat)-1)]<-rater2_vector_allcat
+  }
+
+table(is.na(rater2_vector_allcat))
+
+if(sign(start_timing_diff)==1){
+  rating_df_all<-data.frame(matrix(NA, nrow=maxtrix_rows+1,ncol=2))
+  rating_df_all$X1[(abs(start_timing_diff)):(abs(start_timing_diff)+length(rater1_vector_allcat)-1)]<-rater1_vector_allcat
+  rating_df_all$X2[1:length(rater2_vector_allcat)]<-rater2_vector_allcat
+  }
+
+#convert to table
+rater1_table_all<-table(rater1_vector_allcat) #ratings rater 1
+names(dimnames(rater1_table_all)) <-rater1_name
+rater1_table_all
+
+rater2_table_all<-table(rater2_vector_allcat) #ratings rater 2
+names(dimnames(rater2_table_all)) <-rater2_name
+rater2_table_all
+
+#allign rating categories
+alligned_categories<-all(names(rater1_table_all) %in% names(rater2_table_all)) & 
+all(names(rater2_table_all) %in% names(rater1_table_all))
+paste('all categories between rater alligned:',alligned_categories)
+
+unalligned_categories<-c(names(rater2_table_all)[!(names(rater2_table_all) %in% names(rater1_table_all))],
+                         names(rater1_table_all)[!(names(rater1_table_all) %in% names(rater2_table_all))])
+
+#remove rating categories that only occur in one rater
+rating_df_all<-rating_df_all[!(rating_df_all[,1] %in% unalligned_categories | 
+                                       rating_df_all[,2] %in% unalligned_categories),]
+
+#convert to contingency table
+con_table_all<- table(rating_df_all[,1],rating_df_all[,2]) #create contingency table
+names(dimnames(con_table_all)) <- c(rater1_name, rater2_name)  #add names
+#con_table_all #print
+
+```
+
+## performance across rating categories
+
+- utlizes rater agreement = sum of agreements / (sum of agreements + sum of non-agreements)
+- also calcuates IRR as Cohens Kappa that punishes sparse categories
+
+```{r performance metrics across all categories}
+
+diag_agree<-round(sum(diag(x=con_table_all))/sum(con_table_all),2)
+kable(data.frame(diag_agree),caption = 'global rater agreement by category')
+
+df_agree_by_cat<-(round(diag(x=con_table_all)/rowSums(con_table_all),2)+
+round(diag(x=con_table_all)/colSums(con_table_all),2))/2
+kable(data.frame(df_agree_by_cat),caption = 'rater agreement by category')
+
+cohen.kappa(rating_df_all) #IRR
+
+#IRR statistics that punish sparse categories
+#irr::kappa2(rating_df_all, weight = 'equal') #IRR with disagreement is weighted
+#irr::kappam.fleiss(rating_df) #for multiple raters
+
+#Krippendorf Alpha
+#rating_df_all_long<-t(as.matrix(rating_df_all)) #convert to long format
+#irr::kripp.alpha(rating_df_all_long, method = "nominal")
+#table(rating_df_all_long)
+
+```
+
+
+# performance for one category
+
+- is this evaluated: `r eval_single_category``
+- displayed rating category: `r rating_category`
+
+## plot annotation overlap
 
 Figure shows the number of annotated gaze events (x-axis) and onset and offset of that event (y-axis).
 Overlap in Ratings can be done by looking at horizontal overlap at any given timepoint.
 
-displayed rating category: `r rating_category`
 
-
-```{r pressure, echo=FALSE, fig.height=10}
+```{r pressure, echo=FALSE, fig.height=10, eval=eval_single_category}
 
 table(rater1_task1_category[,rating_category])
 table(rater2_task1_category[,rating_category])
@@ -156,62 +359,26 @@ ggplot(df) +
   
 ```
 
-# Create Matrix for calculating Inter-Rater-Reliability
+## create Matrix for calculating Inter-Rater-Reliability or Performance
 
 - matrix is calculated per every 10ms. This is also the time resolution provided by INTERACT coding software
 - function creates a matrix that alligns rating time frames between raters that is used for a contingency table
 - scaling factor can be changed in code to alter temporal resolution of contingency table (e.g: 1s or 10ms)
 
-```{r IRR matrix, warning=FALSE}
+```{r IRR matrix one rating category, warning=FALSE, eval=eval_single_category}
 
-scaling_factor<-100 # for data in seconds format, scaling factor 100calculates the IRR based on 0.01 second precision
-
-# convert to matrix to define inter-rater reliability
-
-##create a matrix - function takes interact ratings and creates vector in tenth of second format with according rating label
-fun_rater_vector<-function(rating_df){
-
-###get max time
-#max_time<-format(max_time,"%H:%M:%OS2") #backconverted to character
-max_time<-max(rating_df$Offset_Time)
-min_time<-min(rating_df$Onset_Time)
-
-
-###calculate the number of tens of seconds 
-# vector_rows<-as.numeric(substr(max_time,1,2))*360000+
-#   as.numeric(substr(max_time,4,5))*6000+
-#   as.numeric(substr(max_time,7,8))*100+
-#   as.numeric(substr(max_time,10,11))
-vector_rows<-(max_time-min_time)*scaling_factor
-
-#length of rater vector based on rated time
-rater_vector<-rep(NA,vector_rows)
-
-#function that fills a vector with categories based on ratings
-for(i in 1:nrow(rating_df)){
-#start_row<-round(as.numeric(difftime(rating_df$Onset_Time[i],min(rating_df$Onset_Time),units='secs'))*100)
-#end_row<-round(as.numeric(difftime(rating_df$Offset_Time[i],min(rating_df$Onset_Time),units='secs'))*100)
-start_row<-round((rating_df$Onset_Time[i]-min(rating_df$Onset_Time))*scaling_factor)
-end_row<-round((rating_df$Offset_Time[i]-min(rating_df$Onset_Time))*scaling_factor)
-category<-rating_df[i,rating_category]
-if(category==''){category<-'NONE'}
-
-#print(c(i,start_row,end_row,category)) #DEBUGGING
-
-rater_vector[start_row:end_row]<-category
-}
-
-return(rater_vector)
-  
-}
 
 #convert to vector
-rater1_vector<-fun_rater_vector(rating_df=rater1_task1_category)
-rater2_vector<-fun_rater_vector(rating_df=rater2_task1_category)
+rater1_vector<-fun_rater_vector_singlecat(rating_df=rater1_task1_category,
+                                scaling_factor_f=scaling_factor)
+rater2_vector<-fun_rater_vector_singlecat(rating_df=rater2_task1_category,
+                                scaling_factor_f=scaling_factor)
 
 # #reduce to one rating
-# rater1_vector<-ifelse(grepl(rating_category,rater1_vector),rating_category,'NONE')
-# rater2_vector<-ifelse(grepl(rating_category,rater2_vector),rating_category,'NONE')
+if(one_rating){
+rater1_vector<-ifelse(grepl(rating_category,rater1_vector),rating_category,'NONE')
+rater2_vector<-ifelse(grepl(rating_category,rater2_vector),rating_category,'NONE')
+}
 
 #consider rating timing offset between raters
 rater1_start_timing<-min(rater1_task1_category$Onset_Time)
@@ -248,12 +415,88 @@ con_table<- table(rating_df[,1],rating_df[,2]) #create contingency table
 names(dimnames(con_table)) <- c(rater1_name, rater2_name)  #add names
 con_table #print
 
+```
+
+## performance metrics on predefined category
+
+```{r metrics package-based, eval=eval_single_category}
+
 cohen.kappa(rating_df) #IRR
 irr::kappa2(rating_df, weight = 'equal') #IRR with disagreement is weighted
 #irr::kappam.fleiss(rating_df) #for multiple raters
 
 #Krippendorf Alpha
-rating_df_long<-t(as.matrix(rating_df)) #convert to long format
-irr::kripp.alpha(rating_df_long, method = "nominal")
+# rating_df_long<-t(as.matrix(rating_df)) #convert to long format
+# irr::kripp.alpha(rating_df_long, method = "nominal")
+
+#PRECISION - TP / (FN + TP) - How many retrieved items are relevant
+P1<-Precision(rating_df$X1,rating_df$X2, positive= paste0(rating_category)) 
+P2<-Precision(rating_df$X2, rating_df$X1, positive= paste0(rating_category)) 
+mean_precision<-(P1+P2)/2
+paste('mean precision:',round(mean_precision,2))
+
+#RECALL - TP / FN - How many relevant items are retrieved?
+R1<-Recall(rating_df$X1,rating_df$X2, positive= paste0(rating_category)) 
+R2<-Recall(rating_df$X2,rating_df$X1, positive= paste0(rating_category)) 
+mean_recall<-(R1+R2)/2
+paste('mean recall:',round(mean_recall,2))
+
+#RECALL - harmonic mean of precision and recall
+F1_Score<-F1_Score(rating_df$X1,rating_df$X2, positive= paste0(rating_category))
+paste('F1 score:',round(F1_Score,2))
+
+#ACCURACY - (TP + TN) / (P + N)
+X1_01<-ifelse(rating_df$X1==rating_category,1,0) #change to boolean
+X2_01<-ifelse(rating_df$X2==rating_category,1,0) #change to boolean
+rating_df_boolean<-data.frame(X1_01,X2_01)
+rating_df_boolean<-rating_df_boolean[complete.cases(rating_df_boolean),] #remove NA
+acc_rating<-Accuracy(rating_df_boolean$X1_01,rating_df_boolean$X2_01)
+paste('accuracy:',round(acc_rating,2))
+
+
 ```
+
+
+```{r metrics on contingency table, eval=one_rating & eval_single_category}
+
+# Extract values - from contingency table
+## consider that contingency table ordering change depending on labels 
+TP <- as.double(con_table[row.names(con_table)==rating_category,
+                          colnames(con_table)==rating_category]) #true positives
+FP <- as.double(con_table[row.names(con_table)!=rating_category,
+                          colnames(con_table)==rating_category]) #false positives
+FN <- as.double(con_table[row.names(con_table)==rating_category,
+                          colnames(con_table)!=rating_category]) #false negatives
+TN <- as.double(con_table[row.names(con_table)!=rating_category,
+                          colnames(con_table)!=rating_category]) #true negatives
+
+ 
+# Calculate Precision
+precision <- TP / (TP + FP)
+# 
+# Calculate Recall
+recall <- TP / (TP + FN)
+# 
+# Calculate F1 Score - hamronized mean of precision and recall
+f1_score <- 2 * (precision * recall) / (precision + recall)
+# 
+# Print results
+cat("Precision:", precision, "\n")
+cat("Recall:", recall, "\n")
+cat("F1 Score:", f1_score, "\n")
+
+#balanced accuracy
+TPR <- TP / (TP + FP)
+TNR <- TN / (TN + FN)
+bal_acc<-(TPR+TNR)/2
+paste('balanced accuracy:',round(bal_acc,2))
+
+# Calculate MCC - Matthews Correlation Coefficient
+mcc <- (TP * TN - FP * FN) / sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
+paste('MCC:',round(mcc,2))
+
+
+```
+
+
 

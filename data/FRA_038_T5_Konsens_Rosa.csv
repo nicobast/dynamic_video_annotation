@@ -307,8 +307,3 @@ Level;Description;Number;Onset_Date;Onset_Time;Offset_Date;Offset_Time;Duration_
 3;;1045;0d;00:24:06.120;0d;00:24:06.600;0d;00:00:00.520;;;;;;Single gaze - C;;;Kiste
 3;;1046;0d;00:24:07.200;0d;00:24:08.240;0d;00:00:01.080;Mutual - CT;;;;;;;;
 3;;1047;0d;00:24:08.280;0d;00:24:09.040;0d;00:00:00.800;;Avert - CT;;;;;;;
-;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;
-;Gesamt;Mutual;Refer-T;Follow - CT;Share - CT;Supporting behavior T ;Refer-CT;Refer-T;Follow-T;Supporting behavior CT ;Avert - T;Avert- CT;;;;;
-Rosa;308;43;30;29;70;37;24;30;24;8;3;14;;;;;
-Merlinda;289;43;27;21;62;31;21;27;20;7;3;15;;;;;
